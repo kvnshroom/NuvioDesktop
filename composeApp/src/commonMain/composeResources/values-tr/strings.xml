@@ -1235,6 +1235,9 @@
     <string name="player_next_episode_playing_via_countdown">%1$s üzerinden %2$d sn içinde oynatılıyor…</string>
     <string name="player_next_episode_thumbnail">Sonraki bölüm küçük görseli</string>
     <string name="player_next_episode_unaired">Yayınlanmadı</string>
+    <string name="player_still_watching_title">Hâlâ izliyor musun?</string>
+    <string name="player_still_watching_countdown">%1$d saniye içinde duruyor</string>
+    <string name="player_still_watching_exit">Çık</string>
     <string name="player_skip">Geç</string>
     <string name="player_skip_intro">Intro'yu geç</string>
     <string name="player_skip_outro">Outro'yu geç</string>
@@ -2171,4 +2174,7 @@ Bu özelliği tamamen kendi sorumluluğunuzda kullanırsınız. P2P istediğiniz
     <string name="movie_status_rumored">Söylenti</string>
     <string name="movie_status_in_production">Yapım Aşamasında</string>
     <string name="movie_status_post_production">Post Prodüksiyon</string>
+    <string name="settings_playback_still_watching">Hâlâ izliyor musun?</string>
+    <string name="settings_playback_still_watching_description">Art arda otomatik oynatılan bölümlerden sonra sor.</string>
+    <string name="settings_playback_still_watching_threshold">Bölüm Eşiği</string>
 </resources>

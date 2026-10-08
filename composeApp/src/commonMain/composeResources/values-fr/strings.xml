@@ -1106,6 +1106,9 @@
     <string name="player_next_episode_playing_via_countdown">Lecture via %1$s dans %2$ds…</string>
     <string name="player_next_episode_thumbnail">Miniature de l’épisode suivant</string>
     <string name="player_next_episode_unaired">Non diffusé</string>
+    <string name="player_still_watching_title">Vous regardez toujours&#160;?</string>
+    <string name="player_still_watching_countdown">Arrêt dans %1$d</string>
+    <string name="player_still_watching_exit">Quitter</string>
     <string name="player_skip">Passer</string>
     <string name="player_skip_intro">Passer l’intro</string>
     <string name="player_skip_outro">Passer l’outro</string>
@@ -1988,4 +1991,7 @@
     <string name="movie_status_rumored">Rumeur</string>
     <string name="movie_status_in_production">En production</string>
     <string name="movie_status_post_production">En post-production</string>
+    <string name="settings_playback_still_watching">Vous regardez toujours&#160;?</string>
+    <string name="settings_playback_still_watching_description">Demander après plusieurs épisodes lus automatiquement à la suite.</string>
+    <string name="settings_playback_still_watching_threshold">Seuil d’épisodes</string>
 </resources>

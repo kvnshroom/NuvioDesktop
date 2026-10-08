@@ -982,6 +982,9 @@
     <string name="player_next_episode_playing_via_countdown">Memutar melalui %1$s dalam %2$dd…</string>
     <string name="player_next_episode_thumbnail">Thumbnail episode berikutnya</string>
     <string name="player_next_episode_unaired">Belum Tayang</string>
+    <string name="player_still_watching_title">Apakah Anda masih menonton?</string>
+    <string name="player_still_watching_countdown">Berhenti dalam %1$d</string>
+    <string name="player_still_watching_exit">Keluar</string>
     <string name="player_skip">Lewati</string>
     <string name="player_skip_intro">Lewati Intro</string>
     <string name="player_skip_outro">Lewati Outro</string>
@@ -1467,4 +1470,7 @@
     <string name="movie_status_rumored">Desas-desus</string>
     <string name="movie_status_in_production">Dalam Produksi</string>
     <string name="movie_status_post_production">Pasca Produksi</string>
+    <string name="settings_playback_still_watching">Apakah Anda Masih Menonton?</string>
+    <string name="settings_playback_still_watching_description">Prompt setelah episode yang diputar otomatis berturut-turut.</string>
+    <string name="settings_playback_still_watching_threshold">Ambang Batas Episode</string>
 </resources>
