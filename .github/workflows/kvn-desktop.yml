@@ -192,6 +192,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECT_TREE: ${{ needs.prepare.outputs.tree }}
         run: bash ../ci/scripts/kvn-prepare.sh rebase
+      - name: Fetch the macOS libmpv runtime (Git LFS)
+        working-directory: src
+        # Anonymous download from upstream; the files are the same there.
+        run: |
+          git -c "lfs.url=https://github.com/${UPSTREAM_REPO}.git/info/lfs" lfs pull \
+            --include="composeApp/src/desktopMain/native/macos/runtime/arm64/**" --exclude=""
+          file composeApp/src/desktopMain/native/macos/runtime/arm64/libmpv.2.dylib
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
