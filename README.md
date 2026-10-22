@@ -11,6 +11,13 @@ This branch holds only the automation for a personal Nuvio Desktop build.
   picks these releases up.
 - If the kvn commits stop applying on a new upstream release, the workflow fails and
   GitHub sends a notification; the installed app keeps working.
-- Needs the repository secret `KVN_LOCAL_PROPERTIES_BASE64` (base64 of `local.properties`).
+- dnf repo on GitHub Pages (metadata only; packages stay in the release, signed with the
+  repo GPG key):
+  ```
+  sudo curl -fsSLo /etc/yum.repos.d/nuvio-kvn.repo https://kvnshroom.github.io/NuvioDesktop/nuvio-kvn.repo
+  sudo rpm --import https://kvnshroom.github.io/NuvioDesktop/RPM-GPG-KEY-nuvio-kvn
+  ```
+- Secrets: `KVN_LOCAL_PROPERTIES_BASE64` (base64 of `local.properties`),
+  `KVN_REPO_GPG_PRIVATE_KEY_BASE64` and `KVN_REPO_GPG_PASSPHRASE` (repo signing key).
 
 Stop using it: disable the workflow, reinstall the official app.

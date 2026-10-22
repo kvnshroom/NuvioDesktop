@@ -146,12 +146,56 @@ jobs:
           test "${#rpms[@]}" -eq 1
           rpm -qp --queryformat '%{NAME}-%{VERSION}-%{RELEASE}\n' "${rpms[0]}"
           mkdir -p "${RUNNER_TEMP}/dist"
+          mkdir -p "${RUNNER_TEMP}/rpm"
           cp "${out}" "${RUNNER_TEMP}/dist/"
-          cp "${rpms[0]}" "${RUNNER_TEMP}/dist/Nuvio-Linux-x86_64-${VERSION}.rpm"
+          cp "${rpms[0]}" "${RUNNER_TEMP}/rpm/Nuvio-Linux-x86_64-${VERSION}.rpm"
       - uses: actions/upload-artifact@v4
         with:
-          name: linux
+          name: linux-appimage
           path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm-unsigned
+          path: ${{ runner.temp }}/rpm/*
+          if-no-files-found: error
+
+  # Signs the RPM with the repo key. Runs no upstream code.
+  sign-rpm:
+    needs: linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-rpm-unsigned
+          path: rpm
+      - name: Sign RPM
+        env:
+          GPG_PRIVATE_KEY_BASE64: ${{ secrets.KVN_REPO_GPG_PRIVATE_KEY_BASE64 }}
+          GPG_PASSPHRASE: ${{ secrets.KVN_REPO_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends --yes rpm
+          export GNUPGHOME="${RUNNER_TEMP}/gnupg"
+          mkdir -m 700 "${GNUPGHOME}"
+          printf '%s' "${GPG_PASSPHRASE}" > "${GNUPGHOME}/pass"
+          printf '%s' "${GPG_PRIVATE_KEY_BASE64}" | base64 --decode |
+            gpg --batch --pinentry-mode loopback --passphrase-file "${GNUPGHOME}/pass" --import
+          fpr="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+          rpm --define "_gpg_name ${fpr}" \
+            --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase-file ${GNUPGHOME}/pass" \
+            --addsign rpm/*.rpm
+          gpg --batch --armor --export "${fpr}" > "${RUNNER_TEMP}/pub.asc"
+          db="${RUNNER_TEMP}/rpmdb"
+          mkdir -p "${db}"
+          rpmkeys --dbpath "${db}" --import "${RUNNER_TEMP}/pub.asc"
+          rpmkeys --dbpath "${db}" --checksig rpm/*.rpm
+          rm -rf "${GNUPGHOME}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: rpm/*.rpm
           if-no-files-found: error
 
   macos:
@@ -232,7 +276,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [prepare, linux, macos]
+    needs: [prepare, sign-rpm, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -241,6 +285,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: "{linux-appimage,linux-rpm,macos}"
           path: dist
           merge-multiple: true
       - name: Publish release
@@ -265,3 +310,49 @@ jobs:
             --title "Nuvio ${VERSION}" \
             --notes-file notes.md \
             --latest
+
+  # Publishes the dnf repo (metadata on GitHub Pages, packages stay in the release).
+  rpm-repo:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: ci
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-rpm
+          path: site/rpm
+      - name: Build and sign repo metadata
+        env:
+          GPG_PRIVATE_KEY_BASE64: ${{ secrets.KVN_REPO_GPG_PRIVATE_KEY_BASE64 }}
+          GPG_PASSPHRASE: ${{ secrets.KVN_REPO_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends --yes createrepo-c
+          # Packages are too big for Pages (100 MB); point dnf at the release assets.
+          createrepo_c --baseurl "https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/" site/rpm
+          rm site/rpm/*.rpm
+          export GNUPGHOME="${RUNNER_TEMP}/gnupg"
+          mkdir -m 700 "${GNUPGHOME}"
+          printf '%s' "${GPG_PASSPHRASE}" > "${GNUPGHOME}/pass"
+          printf '%s' "${GPG_PRIVATE_KEY_BASE64}" | base64 --decode |
+            gpg --batch --pinentry-mode loopback --passphrase-file "${GNUPGHOME}/pass" --import
+          gpg --batch --pinentry-mode loopback --passphrase-file "${GNUPGHOME}/pass" \
+            --armor --detach-sign site/rpm/repodata/repomd.xml
+          rm -rf "${GNUPGHOME}"
+          cp ci/repo/RPM-GPG-KEY-nuvio-kvn ci/repo/nuvio-kvn.repo site/
+          find site -type f | sort
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4

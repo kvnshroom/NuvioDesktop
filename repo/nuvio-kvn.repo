@@ -1,0 +1,7 @@
+[nuvio-kvn]
+name=Nuvio kvn (unofficial personal build)
+baseurl=https://kvnshroom.github.io/NuvioDesktop/rpm/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://kvnshroom.github.io/NuvioDesktop/RPM-GPG-KEY-nuvio-kvn
