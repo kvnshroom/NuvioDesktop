@@ -1342,6 +1342,8 @@ compose.desktop {
                 shortcut = true
                 menuGroup = "Nuvio"
                 appCategory = "AudioVideo"
+                // kvn build: RPM/DEB release suffix so each kvn build upgrades the previous one.
+                providers.gradleProperty("nuvio.linux.appRelease").orNull?.let { appRelease = it }
             }
         }
 
