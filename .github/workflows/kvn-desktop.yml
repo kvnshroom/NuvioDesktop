@@ -52,7 +52,18 @@ jobs:
       # libass-android submodule entry. Drop the token by hand instead.
       - name: Drop checkout credentials
         working-directory: src
-        run: git config --local --unset-all 'http.https://github.com/.extraheader' || true
+        run: |
+          set -euo pipefail
+          # checkout keeps the token in an included config file and/or an extraheader.
+          git config --local --name-only --get-regexp '^includeif\.' | while read -r key; do
+            rm -f "$(git config --local --get "${key}")"
+            git config --local --unset-all "${key}"
+          done || true
+          git config --local --unset-all 'http.https://github.com/.extraheader' || true
+          if git config --list --show-origin --includes | grep -i -e extraheader -e includeif; then
+            echo "::error::Checkout credentials are still configured." >&2
+            exit 1
+          fi
       - id: plan
         working-directory: src
         env:
@@ -82,7 +93,18 @@ jobs:
       # libass-android submodule entry. Drop the token by hand instead.
       - name: Drop checkout credentials
         working-directory: src
-        run: git config --local --unset-all 'http.https://github.com/.extraheader' || true
+        run: |
+          set -euo pipefail
+          # checkout keeps the token in an included config file and/or an extraheader.
+          git config --local --name-only --get-regexp '^includeif\.' | while read -r key; do
+            rm -f "$(git config --local --get "${key}")"
+            git config --local --unset-all "${key}"
+          done || true
+          git config --local --unset-all 'http.https://github.com/.extraheader' || true
+          if git config --list --show-origin --includes | grep -i -e extraheader -e includeif; then
+            echo "::error::Checkout credentials are still configured." >&2
+            exit 1
+          fi
       - name: Rebase onto upstream release
         working-directory: src
         env:
@@ -152,7 +174,18 @@ jobs:
       # libass-android submodule entry. Drop the token by hand instead.
       - name: Drop checkout credentials
         working-directory: src
-        run: git config --local --unset-all 'http.https://github.com/.extraheader' || true
+        run: |
+          set -euo pipefail
+          # checkout keeps the token in an included config file and/or an extraheader.
+          git config --local --name-only --get-regexp '^includeif\.' | while read -r key; do
+            rm -f "$(git config --local --get "${key}")"
+            git config --local --unset-all "${key}"
+          done || true
+          git config --local --unset-all 'http.https://github.com/.extraheader' || true
+          if git config --list --show-origin --includes | grep -i -e extraheader -e includeif; then
+            echo "::error::Checkout credentials are still configured." >&2
+            exit 1
+          fi
       - name: Rebase onto upstream release
         working-directory: src
         env:
