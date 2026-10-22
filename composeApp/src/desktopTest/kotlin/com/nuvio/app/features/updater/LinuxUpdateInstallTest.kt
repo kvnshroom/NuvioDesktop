@@ -171,12 +171,45 @@ class LinuxUpdateInstallTest {
     }
 
     @Test
-    fun `a package install is handed to the desktop package handler`() {
+    fun `a deb install is handed to the desktop package handler`() {
+        val command = linuxInstallerCommand(
+            method = LinuxInstallMethod.DEB,
+            updateFile = File("/tmp/updates/Nuvio.deb"),
+            appImagePath = null,
+            currentPid = 4242L,
+        )
+
+        assertEquals(listOf("xdg-open", "/tmp/updates/Nuvio.deb"), command)
+    }
+
+    @Test
+    fun `an rpm install updates from the kvn repo through dnf and restarts`() {
         val command = linuxInstallerCommand(
             method = LinuxInstallMethod.RPM,
             updateFile = File("/tmp/updates/Nuvio.rpm"),
             appImagePath = null,
             currentPid = 4242L,
+            launcherPath = "/opt/nuvio/bin/Nuvio",
+            kvnRepoConfigured = true,
+        )
+
+        assertEquals("sh", command[0])
+        val script = command[2]
+        assertTrue("kill -0 4242" in script)
+        assertTrue("pkexec dnf upgrade -y --refresh --repo nuvio-kvn nuvio" in script)
+        assertTrue("exec '/opt/nuvio/bin/Nuvio'" in script)
+        assertTrue("else xdg-open '/tmp/updates/Nuvio.rpm'" in script)
+    }
+
+    @Test
+    fun `an rpm install without the kvn repo never runs dnf on the download`() {
+        val command = linuxInstallerCommand(
+            method = LinuxInstallMethod.RPM,
+            updateFile = File("/tmp/updates/Nuvio.rpm"),
+            appImagePath = null,
+            currentPid = 4242L,
+            launcherPath = "/opt/nuvio/bin/Nuvio",
+            kvnRepoConfigured = false,
         )
 
         assertEquals(listOf("xdg-open", "/tmp/updates/Nuvio.rpm"), command)
