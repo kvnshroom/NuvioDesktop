@@ -52,8 +52,9 @@ actual object AppUpdaterPlatform {
     actual val isSupported: Boolean
         get() = currentOs != DesktopUpdaterOs.UNKNOWN && linuxInstallMethod != LinuxInstallMethod.FLATPAK
 
+    // kvn build: updates come from the fork's releases (upstream + own features).
     actual val releaseSource: AppUpdateReleaseSource = AppUpdateReleaseSource(
-        owner = "NuvioMedia",
+        owner = "kvnshroom",
         repo = "NuvioDesktop",
         channelBranch = null,
         includePrereleases = true,
