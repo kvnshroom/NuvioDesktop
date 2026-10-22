@@ -1,0 +1,198 @@
+name: kvn desktop build
+
+# Daily: put the kvn commits (still-watching, update source) on top of the
+# latest upstream NuvioDesktop release, build Linux AppImage and macOS arm64 DMG,
+# and publish them as a release of this fork. The app's updater reads these.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if this source was already released
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kvn-desktop
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: NuvioMedia/NuvioDesktop
+  FEATURE_BRANCH: kvn
+  APPIMAGE_TOOL_VERSION: 1.9.1
+  APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      version: ${{ steps.plan.outputs.version }}
+      upstream: ${{ steps.plan.outputs.upstream }}
+      tree: ${{ steps.plan.outputs.tree }}
+      commits: ${{ steps.plan.outputs.commits }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: ci
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.FEATURE_BRANCH }}
+          path: src
+          fetch-depth: 0
+      - id: plan
+        working-directory: src
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || 'false' }}
+        run: bash ../ci/scripts/kvn-prepare.sh plan
+
+  linux:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: ci
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.FEATURE_BRANCH }}
+          path: src
+          fetch-depth: 0
+      - name: Rebase onto upstream release
+        working-directory: src
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECT_TREE: ${{ needs.prepare.outputs.tree }}
+        run: bash ../ci/scripts/kvn-prepare.sh rebase
+      - name: Install build dependencies
+        working-directory: src
+        run: bash ./scripts/linux/install-desktop-build-dependencies.sh
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Write local.properties
+        working-directory: src
+        env:
+          LOCAL_PROPERTIES_BASE64: ${{ secrets.KVN_LOCAL_PROPERTIES_BASE64 }}
+        run: printf '%s' "${LOCAL_PROPERTIES_BASE64}" | base64 --decode > local.properties
+      - name: Build AppImage
+        working-directory: src
+        run: |
+          set -euo pipefail
+          tool="${RUNNER_TEMP}/appimagetool-x86_64.AppImage"
+          curl -fsSL -o "${tool}" \
+            "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGE_TOOL_VERSION}/appimagetool-x86_64.AppImage"
+          echo "${APPIMAGETOOL_SHA256}  ${tool}" | sha256sum --check
+          chmod +x "${tool}"
+          export APPIMAGETOOL="${tool}"
+          export APPIMAGE_WEBSITE_URL="https://github.com/${GITHUB_REPOSITORY}"
+          ./gradlew :composeApp:packageReleaseAppImage \
+            "-Pnuvio.desktop.versionName=${VERSION}" \
+            -Pcompose.desktop.packaging.checkJdkVendor=false \
+            --no-configuration-cache --no-daemon --stacktrace
+          out="composeApp/build/compose/release-appimages/Nuvio-Linux-x86_64-${VERSION}.AppImage"
+          test -f "${out}"
+          mkdir -p "${RUNNER_TEMP}/dist"
+          cp "${out}" "${RUNNER_TEMP}/dist/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  macos:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: macos-15
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: ci
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.FEATURE_BRANCH }}
+          path: src
+          fetch-depth: 0
+      - name: Rebase onto upstream release
+        working-directory: src
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECT_TREE: ${{ needs.prepare.outputs.tree }}
+        run: bash ../ci/scripts/kvn-prepare.sh rebase
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Write local.properties
+        working-directory: src
+        env:
+          LOCAL_PROPERTIES_BASE64: ${{ secrets.KVN_LOCAL_PROPERTIES_BASE64 }}
+        run: printf '%s' "${LOCAL_PROPERTIES_BASE64}" | base64 --decode > local.properties
+      - name: Build unsigned DMG
+        working-directory: src
+        env:
+          NUVIO_MACOS_SIGNING_IDENTITY: ""
+          NUVIO_MACOS_NOTARY_KEYCHAIN_PROFILE: ""
+        run: |
+          set -euo pipefail
+          ./gradlew :composeApp:packageReleaseDmg \
+            "-Pnuvio.desktop.versionName=${VERSION}" \
+            -Pnuvio.macos.arch=arm64 \
+            -Pcompose.desktop.packaging.checkJdkVendor=false \
+            --no-configuration-cache --no-daemon --stacktrace
+          out="composeApp/build/compose/release-dmgs/Nuvio-macOS-arm64-${VERSION}.dmg"
+          test -f "${out}"
+          mkdir -p "${RUNNER_TEMP}/dist"
+          cp "${out}" "${RUNNER_TEMP}/dist/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, linux, macos]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM: ${{ needs.prepare.outputs.upstream }}
+          TREE: ${{ needs.prepare.outputs.tree }}
+          COMMITS: ${{ needs.prepare.outputs.commits }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Upstream release: [${UPSTREAM}](https://github.com/${UPSTREAM_REPO}/releases/tag/${UPSTREAM})"
+            echo
+            echo "kvn commits on top:"
+            echo "${COMMITS}"
+            echo
+            echo "Source tree: \`${TREE}\`"
+          } > notes.md
+          gh release create "${VERSION}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target kvn-ci \
+            --title "Nuvio ${VERSION}" \
+            --notes-file notes.md \
+            --latest
