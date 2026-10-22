@@ -171,6 +171,8 @@ actual object AppUpdaterPlatform {
                 updateFile = updateFile,
                 appImagePath = System.getenv(appImageEnvName),
                 currentPid = ProcessHandle.current().pid(),
+                launcherPath = linuxLauncherPath(),
+                kvnRepoConfigured = File(kvnDnfRepoFile).isFile,
             )
             DesktopUpdaterOs.UNKNOWN -> error("Desktop updates are not supported on this operating system.")
         }
@@ -338,9 +340,17 @@ internal fun linuxInstallerCommand(
     updateFile: File,
     appImagePath: String?,
     currentPid: Long,
+    launcherPath: String? = null,
+    kvnRepoConfigured: Boolean = false,
 ): List<String> {
     if (method == LinuxInstallMethod.APP_IMAGE && !appImagePath.isNullOrBlank()) {
         return listOf("sh", "-c", appImageReplaceScript(updateFile.absolutePath, appImagePath, currentPid))
+    }
+    if (method == LinuxInstallMethod.RPM && kvnRepoConfigured) {
+        return listOf(
+            "sh", "-c",
+            rpmDnfUpdateScript(updateFile.absolutePath, launcherPath, currentPid),
+        )
     }
 
     return listOf("xdg-open", updateFile.absolutePath)
@@ -365,6 +375,33 @@ internal fun appImageReplaceScript(
         append("done; ")
         append("if cp -f -- $downloaded $target; then ")
         append("chmod +x -- $target; rm -f -- $downloaded; exec $target; ")
+        append("else xdg-open $downloaded; fi")
+    }
+}
+
+// kvn build: with the kvn repo configured, an RPM install updates through dnf
+// from that signed repo (polkit asks for the password) and the app starts again
+// afterwards. The download itself is never installed as root: it sits in a
+// user-writable place. Without the repo, or if dnf fails, the download is
+// handed to the desktop as before.
+internal const val kvnDnfRepoFile = "/etc/yum.repos.d/nuvio-kvn.repo"
+
+internal fun rpmDnfUpdateScript(
+    downloadedPath: String,
+    launcherPath: String?,
+    currentPid: Long,
+): String {
+    val downloaded = singleQuote(downloadedPath)
+    // -y: no terminal to answer on; the transaction is limited to nuvio from the kvn repo.
+    val dnf = "pkexec dnf upgrade -y --refresh --repo nuvio-kvn nuvio"
+    val relaunch = launcherPath?.takeIf { it.isNotBlank() }?.let { "exec ${singleQuote(it)}; " } ?: ""
+    return buildString {
+        append("i=0; ")
+        append("while [ \$i -lt $appImageExitWaitTicks ] && kill -0 $currentPid 2>/dev/null; do ")
+        append("sleep 0.1; i=\$((i+1)); ")
+        append("done; ")
+        append("if $dnf; then ")
+        append("rm -f -- $downloaded; $relaunch")
         append("else xdg-open $downloaded; fi")
     }
 }
