@@ -73,6 +73,7 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
     echo "build=${build}"
     echo "version=${version}"
+    echo "number=$((last_n + 1))"
     echo "upstream=${latest}"
     echo "tree=${tree}"
     echo "commits<<EOF"

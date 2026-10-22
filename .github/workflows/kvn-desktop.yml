@@ -1,7 +1,7 @@
 name: kvn desktop build
 
 # Daily: put the kvn commits (still-watching, update source) on top of the
-# latest upstream NuvioDesktop release, build Linux AppImage and macOS arm64 DMG,
+# latest upstream NuvioDesktop release, build Linux RPM + AppImage and macOS arm64 DMG,
 # and publish them as a release of this fork. The app's updater reads these.
 
 on:
@@ -34,6 +34,7 @@ jobs:
     outputs:
       build: ${{ steps.plan.outputs.build }}
       version: ${{ steps.plan.outputs.version }}
+      number: ${{ steps.plan.outputs.number }}
       upstream: ${{ steps.plan.outputs.upstream }}
       tree: ${{ steps.plan.outputs.tree }}
       commits: ${{ steps.plan.outputs.commits }}
@@ -61,6 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
+      # RPM release 1.kvn<n> sorts above upstream's release 1 and above earlier kvn builds.
+      LINUX_APP_RELEASE: 1.kvn${{ needs.prepare.outputs.number }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -80,7 +83,7 @@ jobs:
         run: bash ../ci/scripts/kvn-prepare.sh rebase
       - name: Install build dependencies
         working-directory: src
-        run: bash ./scripts/linux/install-desktop-build-dependencies.sh
+        run: bash ./scripts/linux/install-desktop-build-dependencies.sh fakeroot rpm cpio
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -91,7 +94,7 @@ jobs:
         env:
           LOCAL_PROPERTIES_BASE64: ${{ secrets.KVN_LOCAL_PROPERTIES_BASE64 }}
         run: printf '%s' "${LOCAL_PROPERTIES_BASE64}" | base64 --decode > local.properties
-      - name: Build AppImage
+      - name: Build RPM and AppImage
         working-directory: src
         run: |
           set -euo pipefail
@@ -102,14 +105,19 @@ jobs:
           chmod +x "${tool}"
           export APPIMAGETOOL="${tool}"
           export APPIMAGE_WEBSITE_URL="https://github.com/${GITHUB_REPOSITORY}"
-          ./gradlew :composeApp:packageReleaseAppImage \
+          ./gradlew :composeApp:packageReleaseRpm :composeApp:packageReleaseAppImage \
             "-Pnuvio.desktop.versionName=${VERSION}" \
+            "-Pnuvio.linux.appRelease=${LINUX_APP_RELEASE}" \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache --no-daemon --stacktrace
           out="composeApp/build/compose/release-appimages/Nuvio-Linux-x86_64-${VERSION}.AppImage"
           test -f "${out}"
+          mapfile -t rpms < <(find composeApp/build/compose/binaries/main-release/rpm -maxdepth 1 -name '*.rpm')
+          test "${#rpms[@]}" -eq 1
+          rpm -qp --queryformat '%{NAME}-%{VERSION}-%{RELEASE}\n' "${rpms[0]}"
           mkdir -p "${RUNNER_TEMP}/dist"
           cp "${out}" "${RUNNER_TEMP}/dist/"
+          cp "${rpms[0]}" "${RUNNER_TEMP}/dist/Nuvio-Linux-x86_64-${VERSION}.rpm"
       - uses: actions/upload-artifact@v4
         with:
           name: linux
