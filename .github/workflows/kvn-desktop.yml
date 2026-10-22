@@ -48,7 +48,11 @@ jobs:
           ref: ${{ env.FEATURE_BRANCH }}
           path: src
           fetch-depth: 0
-          persist-credentials: false
+      # Not persist-credentials: false, its cleanup trips over upstream's broken
+      # libass-android submodule entry. Drop the token by hand instead.
+      - name: Drop checkout credentials
+        working-directory: src
+        run: git config --local --unset-all 'http.https://github.com/.extraheader' || true
       - id: plan
         working-directory: src
         env:
@@ -74,7 +78,11 @@ jobs:
           ref: ${{ env.FEATURE_BRANCH }}
           path: src
           fetch-depth: 0
-          persist-credentials: false
+      # Not persist-credentials: false, its cleanup trips over upstream's broken
+      # libass-android submodule entry. Drop the token by hand instead.
+      - name: Drop checkout credentials
+        working-directory: src
+        run: git config --local --unset-all 'http.https://github.com/.extraheader' || true
       - name: Rebase onto upstream release
         working-directory: src
         env:
@@ -140,7 +148,11 @@ jobs:
           ref: ${{ env.FEATURE_BRANCH }}
           path: src
           fetch-depth: 0
-          persist-credentials: false
+      # Not persist-credentials: false, its cleanup trips over upstream's broken
+      # libass-android submodule entry. Drop the token by hand instead.
+      - name: Drop checkout credentials
+        working-directory: src
+        run: git config --local --unset-all 'http.https://github.com/.extraheader' || true
       - name: Rebase onto upstream release
         working-directory: src
         env:
