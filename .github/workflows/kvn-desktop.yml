@@ -135,11 +135,16 @@ jobs:
           chmod +x "${tool}"
           export APPIMAGETOOL="${tool}"
           export APPIMAGE_WEBSITE_URL="https://github.com/${GITHUB_REPOSITORY}"
-          ./gradlew :composeApp:packageReleaseRpm :composeApp:packageReleaseAppImage \
-            "-Pnuvio.desktop.versionName=${VERSION}" \
-            "-Pnuvio.linux.appRelease=${LINUX_APP_RELEASE}" \
-            -Pcompose.desktop.packaging.checkJdkVendor=false \
-            --no-configuration-cache --no-daemon --stacktrace
+          # One Gradle run per package, like upstream's desktop-release.yml: since
+          # Compose 1.13 both tasks write binaries/main-release/app, and Gradle
+          # rejects that overlap when they share a run.
+          for task in packageReleaseRpm packageReleaseAppImage; do
+            ./gradlew ":composeApp:${task}" \
+              "-Pnuvio.desktop.versionName=${VERSION}" \
+              "-Pnuvio.linux.appRelease=${LINUX_APP_RELEASE}" \
+              -Pcompose.desktop.packaging.checkJdkVendor=false \
+              --no-configuration-cache --no-daemon --stacktrace
+          done
           out="composeApp/build/compose/release-appimages/Nuvio-Linux-x86_64-${VERSION}.AppImage"
           test -f "${out}"
           mapfile -t rpms < <(find composeApp/build/compose/binaries/main-release/rpm -maxdepth 1 -name '*.rpm')
