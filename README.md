@@ -11,6 +11,9 @@ This branch holds only the automation for a personal Nuvio Desktop build.
   picks these releases up.
 - If the kvn commits stop applying on a new upstream release, the workflow fails and
   GitHub sends a notification; the installed app keeps working.
+- Once upstream ships a kvn feature itself (the "Are you still watching?" PR), the rebase
+  leaves our commit out and keeps upstream's version. `UPSTREAMED_FEATURES` in
+  `scripts/kvn-prepare.sh` lists each feature with code that proves it is upstream.
 - dnf repo on GitHub Pages (metadata only; packages stay in the release, signed with the
   repo GPG key):
   ```
