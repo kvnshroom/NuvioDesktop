@@ -42,15 +42,18 @@ upstreamed_commits() {
 }
 
 if [[ "${base}" != "${latest}" ]]; then
-  mapfile -t dropped < <(upstreamed_commits)
-  for sha in "${dropped[@]}"; do
+  # Plain string instead of mapfile/arrays: the macOS runner has bash 3.2
+  # (no mapfile, and empty arrays trip set -u there).
+  KVN_DROP="$(upstreamed_commits | tr '\n' ' ')"
+  export KVN_DROP
+  for sha in ${KVN_DROP}; do
     echo "Upstream ${latest} already contains $(git log -1 --format='"%s"' "${sha}"): leaving out ${sha}."
   done
   # Non-interactive rebase: the editor turns those picks into drops. git
   # appends the todo file path, which the inner bash receives as $0.
-  export KVN_DROP="${dropped[*]}"
+  # sed writes to a temp file: BSD sed (macOS) reads "-i -E" as a backup suffix.
   # shellcheck disable=SC2016  # expanded by the inner bash, not here
-  editor='bash -c '\''for s in $KVN_DROP; do sed -i -E "s/^pick (${s}[0-9a-f]*) /drop \1 /" "$0"; done'\'
+  editor='bash -c '\''for s in $KVN_DROP; do sed -E "s/^pick (${s}[0-9a-f]*) /drop \1 /" "$0" > "$0.kvn" && mv "$0.kvn" "$0"; done'\'
   if ! GIT_SEQUENCE_EDITOR="${editor}" git rebase -i --onto "${latest}" "${base}"; then
     git rebase --abort || true
     echo "::error::The kvn commits no longer apply on ${latest}. Resolve the conflict on the kvn branch." >&2
