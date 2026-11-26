@@ -11,6 +11,11 @@ name: kvn desktop build
 on:
   schedule:
     - cron: "17 4 * * *"
+    # Scheduled runs start hours late when GitHub is busy (8-10 h seen in
+    # Nov 2026), which put the macOS job into the US daytime runner shortage.
+    # A second slot lands in the quiet early UTC hours; it builds only what
+    # the release still lacks and otherwise stops after the plan step.
+    - cron: "47 19 * * *"
   workflow_dispatch:
     inputs:
       force:
