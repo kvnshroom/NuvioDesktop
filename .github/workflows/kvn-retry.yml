@@ -1,0 +1,52 @@
+name: kvn retry runner failures
+
+# GitHub sometimes has no free hosted runner (mostly macOS) or loses one
+# mid-job. Re-run only the failed jobs of the build, at most twice, and only for
+# those infrastructure errors; real build failures stay failed.
+
+on:
+  workflow_run:
+    workflows: [kvn desktop build]
+    types: [completed]
+
+permissions:
+  actions: write
+  checks: read
+
+jobs:
+  retry:
+    if: >-
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.conclusion != 'skipped' &&
+      github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run jobs that failed for runner reasons
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -euo pipefail
+          # Messages GitHub attaches when the runner, not the build, failed.
+          infra='not acquired by Runner|lost communication with the server|runner has received a shutdown signal|hosted runner encountered an error'
+          found=""
+          while read -r job_id job_name; do
+            [[ -n "${job_id}" ]] || continue
+            messages="$(gh api "repos/${GITHUB_REPOSITORY}/check-runs/${job_id}/annotations" --jq '.[].message')"
+            if grep -q -E "${infra}" <<<"${messages}"; then
+              echo "${job_name}: runner failure"
+              found=yes
+            else
+              echo "${job_name}: build failure, not retried"
+            fi
+          done < <(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${ATTEMPT}/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "\(.id) \(.name)"')
+          if [[ -z "${found}" ]]; then
+            echo "No runner failure, nothing to retry."
+            exit 0
+          fi
+          # Give GitHub time to free up runners before asking again.
+          sleep 600
+          gh run rerun "${RUN_ID}" --failed --repo "${GITHUB_REPOSITORY}"
+          echo "Re-ran the failed jobs of run ${RUN_ID} (attempt ${ATTEMPT} -> $((ATTEMPT + 1)))."
