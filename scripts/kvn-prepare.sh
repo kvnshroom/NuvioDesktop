@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebase the kvn feature commits onto the latest upstream NuvioDesktop release.
 #
-#   kvn-prepare.sh plan     rebase, decide whether a build is needed, pick the version
+#   kvn-prepare.sh plan     rebase, decide what to build per platform, pick the version
 #   kvn-prepare.sh rebase   rebase only; with EXPECT_TREE set, fail if the result differs
 #
 # Runs inside a full-history checkout of the feature branch. Writes key=value
@@ -84,26 +84,43 @@ while read -r tag; do
   fi
 done < <(gh release list --repo "${fork_repo}" --limit 100 --json tagName --jq '.[].tagName')
 
+# A release can lack a platform when only that build failed (for example no
+# macOS runner was free). For the same source, build just the missing platforms
+# and add them to that release instead of skipping it or bumping the version.
 build=true
+build_linux=true
+build_macos=true
+number=$((last_n + 1))
 if [[ -n "${last_tag}" && "${FORCE:-false}" != "true" ]]; then
   # shellcheck disable=SC2016  # the backticks are literal markdown in the release notes
   last_tree="$(gh release view "${last_tag}" --repo "${fork_repo}" --json body --jq .body |
     sed -n 's/^Source tree: `\([0-9a-f]*\)`.*/\1/p')"
   if [[ "${last_tree}" == "${tree}" ]]; then
-    echo "${last_tag} already contains this source, nothing to build."
-    build=false
+    assets="$(gh release view "${last_tag}" --repo "${fork_repo}" --json assets --jq '.assets[].name')"
+    has_asset() { grep -q -E "$1" <<<"${assets}"; }
+    if has_asset '\.AppImage$' && has_asset '\.rpm$'; then build_linux=false; fi
+    if has_asset '\.dmg$'; then build_macos=false; fi
+    if [[ "${build_linux}" == false && "${build_macos}" == false ]]; then
+      echo "${last_tag} already contains this source, nothing to build."
+      build=false
+    else
+      echo "${last_tag} has this source but lacks platforms (linux: ${build_linux}, macos: ${build_macos}); completing it."
+      number="${last_n}"
+    fi
   fi
 fi
 
-version="${prefix}$((last_n + 1))"
+version="${prefix}${number}"
 commits="$(git log --format='- %s' "${latest}..HEAD")"
-echo "Build: ${build}, version: ${version}"
+echo "Build: ${build} (linux: ${build_linux}, macos: ${build_macos}), version: ${version}"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
     echo "build=${build}"
+    echo "build_linux=${build_linux}"
+    echo "build_macos=${build_macos}"
     echo "version=${version}"
-    echo "number=$((last_n + 1))"
+    echo "number=${number}"
     echo "upstream=${latest}"
     echo "tree=${tree}"
     echo "commits<<EOF"

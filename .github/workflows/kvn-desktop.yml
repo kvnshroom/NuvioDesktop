@@ -3,6 +3,10 @@ name: kvn desktop build
 # Daily: put the kvn commits (still-watching, update source) on top of the
 # latest upstream NuvioDesktop release, build Linux RPM + AppImage and macOS arm64 DMG,
 # and publish them as a release of this fork. The app's updater reads these.
+#
+# Platforms are independent: if one build fails (often just no free macOS
+# runner), the others are still released. The next run builds only what the
+# release lacks, and kvn-retry.yml re-runs runner failures the same day.
 
 on:
   schedule:
@@ -33,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.plan.outputs.build }}
+      build_linux: ${{ steps.plan.outputs.build_linux }}
+      build_macos: ${{ steps.plan.outputs.build_macos }}
       version: ${{ steps.plan.outputs.version }}
       number: ${{ steps.plan.outputs.number }}
       upstream: ${{ steps.plan.outputs.upstream }}
@@ -73,7 +79,7 @@ jobs:
 
   linux:
     needs: prepare
-    if: needs.prepare.outputs.build == 'true'
+    if: needs.prepare.outputs.build == 'true' && needs.prepare.outputs.build_linux == 'true'
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
@@ -205,7 +211,7 @@ jobs:
 
   macos:
     needs: prepare
-    if: needs.prepare.outputs.build == 'true'
+    if: needs.prepare.outputs.build == 'true' && needs.prepare.outputs.build_macos == 'true'
     runs-on: macos-15
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
@@ -282,6 +288,10 @@ jobs:
 
   release:
     needs: [prepare, sign-rpm, macos]
+    # Release whatever built; a failed platform must not hold back the others.
+    if: >-
+      always() && needs.prepare.outputs.build == 'true' &&
+      (needs.sign-rpm.result == 'success' || needs.macos.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -299,8 +309,17 @@ jobs:
           UPSTREAM: ${{ needs.prepare.outputs.upstream }}
           TREE: ${{ needs.prepare.outputs.tree }}
           COMMITS: ${{ needs.prepare.outputs.commits }}
+          LINUX_RESULT: ${{ needs.sign-rpm.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
         run: |
           set -euo pipefail
+          # "skipped" means the release already has that platform.
+          for platform in linux macos; do
+            result_var="${platform^^}_RESULT"
+            if [[ "${!result_var}" != success && "${!result_var}" != skipped ]]; then
+              echo "::warning::${platform} build ${!result_var}; releasing the other platforms. The next run adds ${platform}."
+            fi
+          done
           {
             echo "Upstream release: [${UPSTREAM}](https://github.com/${UPSTREAM_REPO}/releases/tag/${UPSTREAM})"
             echo
@@ -309,16 +328,24 @@ jobs:
             echo
             echo "Source tree: \`${TREE}\`"
           } > notes.md
-          gh release create "${VERSION}" dist/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --target kvn-ci \
-            --title "Nuvio ${VERSION}" \
-            --notes-file notes.md \
-            --latest
+          # The release exists when this run only completes missing platforms,
+          # or when a re-run adds a platform after the first attempt released.
+          if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${VERSION}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${VERSION}" dist/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target kvn-ci \
+              --title "Nuvio ${VERSION}" \
+              --notes-file notes.md \
+              --latest
+          fi
 
   # Publishes the dnf repo (metadata on GitHub Pages, packages stay in the release).
   rpm-repo:
-    needs: [prepare, release]
+    needs: [prepare, sign-rpm, release]
+    # Only when this run built a new signed RPM.
+    if: always() && needs.release.result == 'success' && needs.sign-rpm.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       pages: write
