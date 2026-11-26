@@ -343,11 +343,13 @@ jobs:
 
   # Publishes the dnf repo (metadata on GitHub Pages, packages stay in the release).
   rpm-repo:
-    needs: [prepare, sign-rpm, release]
-    # Only when this run built a new signed RPM.
-    if: always() && needs.release.result == 'success' && needs.sign-rpm.result == 'success'
+    needs: [prepare, release]
+    # Takes the RPM from the release, so it also runs when this run only added
+    # another platform and the RPM came from an earlier run.
+    if: always() && needs.release.result == 'success'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -359,11 +361,24 @@ jobs:
         with:
           path: ci
           persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: linux-rpm
-          path: site/rpm
+      - name: Download the RPM from the release
+        id: rpm
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/rpm
+          if ! gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" --json assets \
+            --jq '.assets[].name' | grep -q '\.rpm$'; then
+            echo "::notice::${VERSION} has no RPM yet; the dnf repo stays as it is."
+            echo "found=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          gh release download "${VERSION}" --repo "${GITHUB_REPOSITORY}" --pattern '*.rpm' --dir site/rpm
+          ls site/rpm/*.rpm
+          echo "found=true" >> "${GITHUB_OUTPUT}"
       - name: Build and sign repo metadata
+        if: steps.rpm.outputs.found == 'true'
         env:
           GPG_PRIVATE_KEY_BASE64: ${{ secrets.KVN_REPO_GPG_PRIVATE_KEY_BASE64 }}
           GPG_PASSPHRASE: ${{ secrets.KVN_REPO_GPG_PASSPHRASE }}
@@ -385,6 +400,8 @@ jobs:
           cp ci/repo/RPM-GPG-KEY-nuvio-kvn ci/repo/nuvio-kvn.repo site/
           find site -type f | sort
       - uses: actions/upload-pages-artifact@v5
+        if: steps.rpm.outputs.found == 'true'
         with:
           path: site
       - uses: actions/deploy-pages@v5
+        if: steps.rpm.outputs.found == 'true'
